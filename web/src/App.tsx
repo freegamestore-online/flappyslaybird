@@ -274,7 +274,9 @@ export default function App() {
     resize();
     window.addEventListener("resize", resize);
     return () => window.removeEventListener("resize", resize);
-  }, []);
+    // Re-run when the phase changes: the canvas only exists once we leave the
+    // "avatar" phase, so the initial mount (phase === "avatar") can't size it.
+  }, [phase]);
 
   const initGame = useCallback((avatar: AvatarType) => {
     const { h } = canvasSizeRef.current;
@@ -600,7 +602,17 @@ export default function App() {
   }
 
   return (
-    <GameShell topbar={<GameTopbar title="Flappy Slay Bird 🐦" score={score} highScore={highScore} />}>
+    <GameShell
+      topbar={
+        <GameTopbar
+          title="Flappy Slay Bird 🐦"
+          stats={[
+            { label: "Score", value: score, accent: true },
+            { label: "Best", value: Math.max(highScore, score) },
+          ]}
+        />
+      }
+    >
       {phase === "avatar" ? (
         <AvatarPicker onSelect={handleAvatarSelect} />
       ) : (
