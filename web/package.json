@@ -1,5 +1,5 @@
 {
-  "name": "@APPNAME/web",
+  "name": "@flappyslaybird/web",
   "private": true,
   "type": "module",
   "scripts": {
