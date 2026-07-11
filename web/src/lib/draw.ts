@@ -1,4 +1,5 @@
-import type { AvatarType, Bird, Tree, Cloud, Collectable, Kid } from "../types";
+import type { Bird, Tree, Cloud, Collectable, Kid } from "../types";
+import { drawEagle, drawFlamingo, drawPenguin } from "./draw-birds";
 
 // ─── Sky / Background ───────────────────────────────────────────────────────
 
@@ -23,7 +24,10 @@ export function drawGround(ctx: CanvasRenderingContext2D, w: number, h: number) 
   ctx.fillRect(0, h - 28, w, 28);
 }
 
-// ─── Trees (pipes) ──────────────────────────────────────────────────────────
+// ─── Obstacles: airplane on top, tree below ──────────────────────────────────
+// The kid asked for AIRPLANES instead of trees on the top part. The collision
+// column is unchanged (same rect the physics checks) — the plane hangs at the
+// bottom of the column trailing a striped banner up to the sky.
 
 export function drawTree(ctx: CanvasRenderingContext2D, tree: Tree, canvasH: number) {
   const { x, gapY, gapH, width } = tree;
@@ -31,23 +35,12 @@ export function drawTree(ctx: CanvasRenderingContext2D, tree: Tree, canvasH: num
   const botY = gapY + gapH / 2;
   const botH = canvasH - 48 - botY;
 
-  // trunk color
-  const trunkColor = "#5d4037";
-  const barkColor = "#795548";
-
-  // ── TOP TREE ──
-  // trunk
-  ctx.fillStyle = trunkColor;
-  ctx.fillRect(x + width * 0.3, 0, width * 0.4, topH - 30);
-  // bark lines
-  ctx.fillStyle = barkColor;
-  for (let i = 20; i < topH - 30; i += 18) {
-    ctx.fillRect(x + width * 0.3 + 4, i, width * 0.12, 6);
-  }
-  // foliage layers (upside-down)
-  drawFoliage(ctx, x + width / 2, topH - 30, width, true);
+  // ── TOP: AIRPLANE with banner ──
+  drawAirplaneColumn(ctx, x, width, topH);
 
   // ── BOTTOM TREE ──
+  const trunkColor = "#5d4037";
+  const barkColor = "#795548";
   if (botH > 0) {
     drawFoliage(ctx, x + width / 2, botY + 30, width, false);
     ctx.fillStyle = trunkColor;
@@ -57,6 +50,82 @@ export function drawTree(ctx: CanvasRenderingContext2D, tree: Tree, canvasH: num
       ctx.fillRect(x + width * 0.3 + 4, i, width * 0.12, 6);
     }
   }
+}
+
+/** A cute cartoon plane at the bottom of the top obstacle column, towing a
+ *  striped banner that fills the column up to the top of the screen. */
+function drawAirplaneColumn(ctx: CanvasRenderingContext2D, x: number, width: number, topH: number) {
+  if (topH <= 0) return;
+  const cx = x + width / 2;
+  const planeY = Math.max(26, topH - 22); // plane sits at the column's bottom edge
+
+  // banner (the column body): striped flag from sky to the plane
+  const bw = width * 0.62;
+  const bx = cx - bw / 2;
+  const bannerBottom = planeY - 20;
+  if (bannerBottom > 0) {
+    ctx.fillStyle = "#ef5350";
+    ctx.fillRect(bx, 0, bw, bannerBottom);
+    ctx.fillStyle = "#ffcdd2";
+    for (let sy = 10; sy < bannerBottom; sy += 26) {
+      ctx.fillRect(bx, sy, bw, 10);
+    }
+    // banner edges
+    ctx.strokeStyle = "#c62828";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(bx, -2, bw, bannerBottom + 2);
+    // tow ropes to the plane
+    ctx.strokeStyle = "#8d6e63";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(bx + 3, bannerBottom);
+    ctx.lineTo(cx - 8, planeY - 6);
+    ctx.moveTo(bx + bw - 3, bannerBottom);
+    ctx.lineTo(cx + 8, planeY - 6);
+    ctx.stroke();
+  }
+
+  // plane body (nose pointing left — flying toward the bird)
+  ctx.save();
+  ctx.translate(cx, planeY);
+  // fuselage
+  ctx.fillStyle = "#42a5f5";
+  ctx.beginPath();
+  ctx.ellipse(0, 0, width * 0.55, 11, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // nose cone
+  ctx.fillStyle = "#1e88e5";
+  ctx.beginPath();
+  ctx.arc(-width * 0.5, 0, 8, 0, Math.PI * 2);
+  ctx.fill();
+  // propeller
+  ctx.strokeStyle = "#90a4ae";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(-width * 0.58, -12);
+  ctx.lineTo(-width * 0.58, 12);
+  ctx.stroke();
+  // wing
+  ctx.fillStyle = "#1976d2";
+  ctx.beginPath();
+  ctx.ellipse(2, 2, width * 0.22, 5, -0.25, 0, Math.PI * 2);
+  ctx.fill();
+  // tail fin
+  ctx.fillStyle = "#1976d2";
+  ctx.beginPath();
+  ctx.moveTo(width * 0.42, -2);
+  ctx.lineTo(width * 0.58, -16);
+  ctx.lineTo(width * 0.58, -2);
+  ctx.closePath();
+  ctx.fill();
+  // windows
+  ctx.fillStyle = "#e3f2fd";
+  for (let wx = -width * 0.28; wx <= width * 0.28; wx += width * 0.14) {
+    ctx.beginPath();
+    ctx.arc(wx, -3, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
 }
 
 function drawFoliage(
@@ -330,8 +399,14 @@ export function drawBird(
     drawRobin(ctx, wingAngle, boosted);
   } else if (bird.avatar === "parrot") {
     drawParrot(ctx, wingAngle, boosted);
-  } else {
+  } else if (bird.avatar === "owl") {
     drawOwl(ctx, wingAngle, boosted);
+  } else if (bird.avatar === "flamingo") {
+    drawFlamingo(ctx, wingAngle, boosted);
+  } else if (bird.avatar === "penguin") {
+    drawPenguin(ctx, wingAngle, boosted);
+  } else {
+    drawEagle(ctx, wingAngle, boosted);
   }
 
   // boost aura

@@ -12,23 +12,22 @@ import {
   drawKid,
   drawBird,
 } from "./lib/draw";
+import { LEVELS, levelForScore, type LevelConfig } from "./lib/levels";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
-const GRAVITY = 1400;
-const FLAP_V = -420;
-const BOOST_FLAP_V = -520;
+const FLAP_V = -400;
+const BOOST_FLAP_V = -500;
 const BIRD_X = 90;
 const TREE_WIDTH = 64;
-const TREE_GAP = 190;
-const TREE_SPEED_BASE = 180;
-const CLOUD_SPEED_BASE = 60;
-const KID_SPEED = 60;
-const MAX_HEARTS = 5;
+const CLOUD_SPEED_BASE = 55;
+const KID_SPEED = 55;
+const MAX_HEARTS = 7;
+const START_HEARTS = 5;
 const BOOST_DURATION = 5;
-const KID_NET_RADIUS = 22;
+const KID_NET_RADIUS = 20;
 const BIRD_RADIUS = 14;
-const TREE_HITBOX_SHRINK = 8;
-const CLOUD_HITBOX_SHRINK = 10;
+const TREE_HITBOX_SHRINK = 14;   // generous: visual width minus 2x this is solid
+const CLOUD_HITBOX_SHRINK = 14;
 const COLLECTABLE_RADIUS = 16;
 const GROUND_H = 48;
 
@@ -60,6 +59,9 @@ const AVATARS: { type: AvatarType; emoji: string; name: string; desc: string }[]
   { type: "robin", emoji: "🐦", name: "Robin", desc: "Speedy & classic. Red breast for luck!" },
   { type: "parrot", emoji: "🦜", name: "Parrot", desc: "Colorful & bold. Long tail for style!" },
   { type: "owl", emoji: "🦉", name: "Owl", desc: "Wise & sturdy. Big eyes see everything!" },
+  { type: "flamingo", emoji: "🦩", name: "Flamingo", desc: "Fabulous in pink. Long-neck elegance!" },
+  { type: "penguin", emoji: "🐧", name: "Penguin", desc: "Round & brave. Flying at last!" },
+  { type: "eagle", emoji: "🦅", name: "Eagle", desc: "Fierce & free. Queen of the sky!" },
 ];
 
 function AvatarPicker({ onSelect }: { onSelect: (a: AvatarType) => void }) {
@@ -107,7 +109,7 @@ function AvatarPicker({ onSelect }: { onSelect: (a: AvatarType) => void }) {
 
       <div className="flex flex-col items-center gap-1 mt-2 text-sm" style={{ color: "#1565c0", fontFamily: "Manrope, sans-serif" }}>
         <p>🖱️ Click / Tap / Space to flap</p>
-        <p>☁️ Avoid clouds &amp; trees</p>
+        <p>✈️ Dodge airplanes &amp; trees, avoid clouds</p>
         <p>🦟 Collect bugs for hearts</p>
         <p>🐉 Dragonfly = 5s boost!</p>
         <p>🧒 Don't get caught by kids!</p>
@@ -121,18 +123,26 @@ function HUD({
   hearts,
   boosted,
   boostTimer,
+  level,
 }: {
   hearts: number;
   boosted: boolean;
   boostTimer: number;
+  level: number;
 }) {
   return (
     <div
       className="absolute top-2 left-2 flex flex-col gap-1 pointer-events-none select-none"
       style={{ zIndex: 10 }}
     >
+      <div
+        className="px-2 py-0.5 rounded-full text-xs font-bold self-start"
+        style={{ background: "rgba(21,101,192,0.85)", color: "#fff", fontFamily: "Manrope, sans-serif" }}
+      >
+        ⭐ Level {level}
+      </div>
       <div className="flex gap-1">
-        {Array.from({ length: MAX_HEARTS }).map((_, i) => (
+        {Array.from({ length: Math.max(MAX_HEARTS, hearts) }).map((_, i) => (
           <span key={i} style={{ fontSize: 22, opacity: i < hearts ? 1 : 0.22 }}>
             ❤️
           </span>
@@ -226,7 +236,9 @@ export default function App() {
   const [phase, setPhase] = useState<GamePhase>("avatar");
   const [score, setScore] = useState(0);
   const [highScore, updateHighScore] = useHighScore("flappyslaybird_hs");
-  const [hearts, setHearts] = useState(3);
+  const [hearts, setHearts] = useState(START_HEARTS);
+  const [level, setLevel] = useState(1);
+  const [levelBanner, setLevelBanner] = useState<string | null>(null);
   const [boosted, setBoosted] = useState(false);
   const [boostTimer, setBoostTimer] = useState(0);
   const [gameOverCause, setGameOverCause] = useState("");
@@ -241,7 +253,9 @@ export default function App() {
   const collectablesRef = useRef<Collectable[]>([]);
   const kidsRef = useRef<Kid[]>([]);
   const scoreRef = useRef(0);
-  const heartsRef = useRef(3);
+  const heartsRef = useRef(START_HEARTS);
+  const levelRef = useRef<LevelConfig>(LEVELS[0]);
+  const bannerTimerRef = useRef(0);
   const phaseRef = useRef<GamePhase>("avatar");
   const wingAngleRef = useRef(0);
   const wingDirRef = useRef(1);
@@ -286,7 +300,9 @@ export default function App() {
     collectablesRef.current = [];
     kidsRef.current = [];
     scoreRef.current = 0;
-    heartsRef.current = 3;
+    heartsRef.current = START_HEARTS;
+    levelRef.current = LEVELS[0];
+    bannerTimerRef.current = 0;
     invincibleRef.current = 0;
     treeSpawnTimerRef.current = 1.5;
     collectSpawnTimerRef.current = 3;
@@ -294,7 +310,9 @@ export default function App() {
     cloudSpawnTimerRef.current = 2;
     distanceRef.current = 0;
     setScore(0);
-    setHearts(3);
+    setHearts(START_HEARTS);
+    setLevel(1);
+    setLevelBanner(null);
     setBoosted(false);
     setBoostTimer(0);
     setGameOverCause("");
@@ -344,12 +362,25 @@ export default function App() {
     const groundY = h - GROUND_H;
     const bird = birdRef.current;
 
-    // Speed scaling with distance
-    const speedMult = 1 + distanceRef.current * 0.00012;
-    const treeSpeed = TREE_SPEED_BASE * speedMult * (bird.boosted ? 1.5 : 1);
-    const cloudSpeed = CLOUD_SPEED_BASE * speedMult;
+    // Level-driven difficulty (levels 1-3 are gentle, 4-5 ramp up)
+    const lvl = levelRef.current;
+    const treeSpeed = lvl.speed * (bird.boosted ? 1.5 : 1);
+    const cloudSpeed = CLOUD_SPEED_BASE * (0.8 + lvl.n * 0.15);
 
     distanceRef.current += treeSpeed * dt;
+
+    // Level-up check + banner countdown
+    const nowLvl = levelForScore(scoreRef.current);
+    if (nowLvl.n !== lvl.n) {
+      levelRef.current = nowLvl;
+      setLevel(nowLvl.n);
+      setLevelBanner(`Level ${nowLvl.n} — ${nowLvl.name}!`);
+      bannerTimerRef.current = 2.2;
+    }
+    if (bannerTimerRef.current > 0) {
+      bannerTimerRef.current -= dt;
+      if (bannerTimerRef.current <= 0) setLevelBanner(null);
+    }
 
     // ── Flap ──
     if (justFlapRef.current) {
@@ -357,8 +388,8 @@ export default function App() {
       justFlapRef.current = false;
     }
 
-    // ── Physics ──
-    bird.vy += GRAVITY * dt;
+    // ── Physics ── (gentler gravity on early levels)
+    bird.vy += lvl.gravity * dt;
     bird.y += bird.vy * dt;
 
     // ── Boost timer ──
@@ -384,12 +415,12 @@ export default function App() {
     // ── Spawn trees ──
     treeSpawnTimerRef.current -= dt;
     if (treeSpawnTimerRef.current <= 0) {
-      const minGapY = 120;
-      const maxGapY = groundY - 120;
+      const minGapY = 130;
+      const maxGapY = groundY - 130;
       const gapY = rand(minGapY, maxGapY);
-      const gapH = Math.max(130, TREE_GAP - distanceRef.current * 0.008);
+      const gapH = lvl.gap;
       treesRef.current.push({ x: w + 10, gapY, gapH, width: TREE_WIDTH, passed: false });
-      treeSpawnTimerRef.current = rand(1.8, 2.6) / speedMult;
+      treeSpawnTimerRef.current = rand(lvl.spawn[0], lvl.spawn[1]);
     }
 
     // ── Spawn clouds ──
@@ -399,7 +430,7 @@ export default function App() {
       const ch = rand(40, 65);
       const cy = rand(30, groundY * 0.55);
       cloudsRef.current.push({ x: w + 10, y: cy, w: cw, h: ch, speed: cloudSpeed * rand(0.7, 1.3) });
-      cloudSpawnTimerRef.current = rand(3, 6);
+      cloudSpawnTimerRef.current = rand(lvl.cloudSpawn[0], lvl.cloudSpawn[1]);
     }
 
     // ── Spawn collectables ──
@@ -416,7 +447,7 @@ export default function App() {
     kidSpawnTimerRef.current -= dt;
     if (kidSpawnTimerRef.current <= 0) {
       kidsRef.current.push({ x: w + 10, netX: 0, netAngle: -0.4, swingDir: 1 });
-      kidSpawnTimerRef.current = rand(12, 20) / speedMult;
+      kidSpawnTimerRef.current = rand(lvl.kidSpawn[0], lvl.kidSpawn[1]);
     }
 
     // ── Move trees ──
@@ -440,7 +471,7 @@ export default function App() {
 
     // ── Move kids ──
     for (const kid of kidsRef.current) {
-      kid.x -= KID_SPEED * dt * speedMult;
+      kid.x -= KID_SPEED * dt * (0.8 + lvl.n * 0.15);
       kid.netAngle += kid.swingDir * 1.8 * dt;
       if (Math.abs(kid.netAngle) > 0.7) kid.swingDir *= -1;
     }
@@ -464,10 +495,14 @@ export default function App() {
         const tx = tree.x + TREE_HITBOX_SHRINK;
         const tw = tree.width - TREE_HITBOX_SHRINK * 2;
 
-        const hitTop = circleRect(bird.x, bird.y, BIRD_RADIUS, tx, -10, tw, topH + 10);
-        const hitBot = circleRect(bird.x, bird.y, BIRD_RADIUS, tx, botY, tw, groundY - botY);
+        const hitTop = circleRect(bird.x, bird.y, BIRD_RADIUS - 3, tx, -10, tw, topH + 10);
+        const hitBot = circleRect(bird.x, bird.y, BIRD_RADIUS - 3, tx, botY, tw, groundY - botY);
 
-        if (hitTop || hitBot) {
+        if (hitTop) {
+          loseHeart("✈️ Hit an airplane!");
+          break;
+        }
+        if (hitBot) {
           loseHeart("🌳 Hit a tree!");
           break;
         }
@@ -481,7 +516,7 @@ export default function App() {
         const cy = cloud.y + CLOUD_HITBOX_SHRINK;
         const cw2 = cloud.w - CLOUD_HITBOX_SHRINK * 2;
         const ch2 = cloud.h - CLOUD_HITBOX_SHRINK * 2;
-        if (circleRect(bird.x, bird.y, BIRD_RADIUS - 2, cx, cy, cw2, ch2)) {
+        if (circleRect(bird.x, bird.y, BIRD_RADIUS - 4, cx, cy, cw2, ch2)) {
           loseHeart("☁️ Hit a cloud!");
           break;
         }
@@ -625,7 +660,20 @@ export default function App() {
             onTouchStart={(e) => { e.preventDefault(); flap(); }}
           />
           {phase === "playing" && (
-            <HUD hearts={hearts} boosted={boosted} boostTimer={boostTimer} />
+            <HUD hearts={hearts} boosted={boosted} boostTimer={boostTimer} level={level} />
+          )}
+          {phase === "playing" && levelBanner && (
+            <div
+              className="absolute inset-x-0 top-16 flex justify-center pointer-events-none"
+              style={{ zIndex: 15 }}
+            >
+              <div
+                className="px-6 py-2 rounded-full text-xl font-bold"
+                style={{ background: "rgba(67,160,71,0.92)", color: "#fff", fontFamily: "Fraunces, serif", boxShadow: "0 4px 20px rgba(0,0,0,0.25)" }}
+              >
+                🎉 {levelBanner}
+              </div>
+            </div>
           )}
           {phase === "gameover" && (
             <GameOverOverlay

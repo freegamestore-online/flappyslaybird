@@ -1,4 +1,4 @@
-export type AvatarType = "robin" | "parrot" | "owl";
+export type AvatarType = "robin" | "parrot" | "owl" | "flamingo" | "penguin" | "eagle";
 
 export interface Bird {
   x: number;
