@@ -1,10 +1,7 @@
-export type AvatarType = "robin" | "parrot" | "owl" | "flamingo" | "penguin" | "eagle";
-
-export interface Bird {
+export interface Flyer {
   x: number;
   y: number;
   vy: number;
-  avatar: AvatarType;
   boosted: boolean;
   boostTimer: number;
 }
@@ -42,4 +39,4 @@ export interface Kid {
   swingDir: number;
 }
 
-export type GamePhase = "avatar" | "playing" | "dead" | "gameover";
+export type GamePhase = "start" | "playing" | "dead" | "gameover";

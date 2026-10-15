@@ -2,7 +2,7 @@ import { useRef, useState, useCallback, useEffect } from "react";
 import { GameShell, GameTopbar } from "@freegamestore/games";
 import { useGameLoop } from "./hooks/useGameLoop";
 import { useHighScore } from "./hooks/useHighScore";
-import type { AvatarType, Bird, Tree, Cloud, Collectable, Kid, GamePhase } from "./types";
+import type { Flyer, Tree, Cloud, Collectable, Kid, GamePhase } from "./types";
 import {
   drawSky,
   drawGround,
@@ -10,14 +10,17 @@ import {
   drawCloud,
   drawCollectable,
   drawKid,
-  drawBird,
+  drawFlyer,
 } from "./lib/draw";
 import { LEVELS, levelForScore, type LevelConfig } from "./lib/levels";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
+// Pipe Flyer brand colour (violet), used for UI accents.
+const BRAND = "#7c3aed";
+const BRAND_DARK = "#5b21b6";
 const FLAP_V = -400;
 const BOOST_FLAP_V = -500;
-const BIRD_X = 90;
+const FLYER_X = 90;
 const TREE_WIDTH = 64;
 const CLOUD_SPEED_BASE = 55;
 const KID_SPEED = 55;
@@ -25,7 +28,7 @@ const MAX_HEARTS = 7;
 const START_HEARTS = 5;
 const BOOST_DURATION = 5;
 const KID_NET_RADIUS = 20;
-const BIRD_RADIUS = 14;
+const FLYER_RADIUS = 14;
 const TREE_HITBOX_SHRINK = 14;   // generous: visual width minus 2x this is solid
 const CLOUD_HITBOX_SHRINK = 14;
 const COLLECTABLE_RADIUS = 16;
@@ -54,62 +57,43 @@ function circleRect(
   return dx * dx + dy * dy < cr * cr;
 }
 
-// ─── Avatar Picker ───────────────────────────────────────────────────────────
-const AVATARS: { type: AvatarType; emoji: string; name: string; desc: string }[] = [
-  { type: "robin", emoji: "🐦", name: "Robin", desc: "Speedy & classic. Red breast for luck!" },
-  { type: "parrot", emoji: "🦜", name: "Parrot", desc: "Colorful & bold. Long tail for style!" },
-  { type: "owl", emoji: "🦉", name: "Owl", desc: "Wise & sturdy. Big eyes see everything!" },
-  { type: "flamingo", emoji: "🦩", name: "Flamingo", desc: "Fabulous in pink. Long-neck elegance!" },
-  { type: "penguin", emoji: "🐧", name: "Penguin", desc: "Round & brave. Flying at last!" },
-  { type: "eagle", emoji: "🦅", name: "Eagle", desc: "Fierce & free. Queen of the sky!" },
-];
-
-function AvatarPicker({ onSelect }: { onSelect: (a: AvatarType) => void }) {
-  const [hovered, setHovered] = useState<AvatarType | null>(null);
+// ─── Start screen ────────────────────────────────────────────────────────────
+function StartScreen({ onStart }: { onStart: () => void }) {
+  const [hovered, setHovered] = useState(false);
 
   return (
     <div className="flex flex-col items-center justify-center h-full gap-6 px-4"
       style={{ background: "linear-gradient(180deg, #87ceeb 0%, #d4f0ff 100%)" }}>
       <h1
         className="text-4xl font-bold text-center drop-shadow"
-        style={{ fontFamily: "Fraunces, serif", color: "#2e7d32" }}
+        style={{ fontFamily: "Fraunces, serif", color: BRAND_DARK }}
       >
-        🐦 Flappy Slay Bird
+        Pipe Flyer
       </h1>
       <p className="text-lg font-semibold" style={{ color: "#1565c0", fontFamily: "Manrope, sans-serif" }}>
-        Choose your bird!
+        Fly your paper plane through the gaps!
       </p>
 
-      <div className="flex flex-wrap justify-center gap-4 w-full max-w-lg">
-        {AVATARS.map((av) => (
-          <button
-            key={av.type}
-            onMouseEnter={() => setHovered(av.type)}
-            onMouseLeave={() => setHovered(null)}
-            onClick={() => onSelect(av.type)}
-            className="flex flex-col items-center gap-2 p-5 rounded-2xl border-4 transition-all cursor-pointer"
-            style={{
-              minWidth: 130,
-              background: hovered === av.type ? "#fff" : "rgba(255,255,255,0.7)",
-              borderColor: hovered === av.type ? "#43a047" : "rgba(255,255,255,0.5)",
-              transform: hovered === av.type ? "scale(1.07)" : "scale(1)",
-              boxShadow: hovered === av.type ? "0 8px 32px rgba(0,0,0,0.18)" : "0 2px 8px rgba(0,0,0,0.10)",
-            }}
-          >
-            <span style={{ fontSize: 56 }}>{av.emoji}</span>
-            <span className="text-xl font-bold" style={{ fontFamily: "Fraunces, serif", color: "#2e7d32" }}>
-              {av.name}
-            </span>
-            <span className="text-xs text-center" style={{ color: "#555", fontFamily: "Manrope, sans-serif", maxWidth: 110 }}>
-              {av.desc}
-            </span>
-          </button>
-        ))}
-      </div>
+      <button
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        onClick={onStart}
+        className="px-10 py-4 rounded-2xl text-xl font-bold transition-all cursor-pointer"
+        style={{
+          background: hovered ? BRAND_DARK : BRAND,
+          color: "#fff",
+          fontFamily: "Fraunces, serif",
+          minHeight: 48,
+          transform: hovered ? "scale(1.05)" : "scale(1)",
+          boxShadow: "0 8px 24px rgba(91,33,182,0.35)",
+        }}
+      >
+        Start flying
+      </button>
 
       <div className="flex flex-col items-center gap-1 mt-2 text-sm" style={{ color: "#1565c0", fontFamily: "Manrope, sans-serif" }}>
         <p>🖱️ Click / Tap / Space to flap</p>
-        <p>✈️ Dodge airplanes &amp; trees, avoid clouds</p>
+        <p>✈️ Dodge airplanes &amp; pillars, avoid clouds</p>
         <p>🦟 Collect bugs for hearts</p>
         <p>🐉 Dragonfly = 5s boost!</p>
         <p>🧒 Don't get caught by kids!</p>
@@ -170,13 +154,11 @@ function GameOverOverlay({
   highScore,
   cause,
   onRestart,
-  onChangeAvatar,
 }: {
   score: number;
   highScore: number;
   cause: string;
   onRestart: () => void;
-  onChangeAvatar: () => void;
 }) {
   return (
     <div
@@ -207,21 +189,14 @@ function GameOverOverlay({
           </div>
         </div>
         {score >= highScore && score > 0 && (
-          <div className="text-sm font-bold" style={{ color: "#43a047" }}>🏆 New High Score!</div>
+          <div className="text-sm font-bold" style={{ color: BRAND }}>🏆 New High Score!</div>
         )}
         <button
           onClick={onRestart}
           className="w-full py-3 rounded-2xl text-lg font-bold mt-1"
-          style={{ background: "#43a047", color: "#fff", fontFamily: "Manrope, sans-serif", minHeight: 48 }}
+          style={{ background: BRAND, color: "#fff", fontFamily: "Manrope, sans-serif", minHeight: 48 }}
         >
           Play Again
-        </button>
-        <button
-          onClick={onChangeAvatar}
-          className="w-full py-2 rounded-2xl text-base font-semibold"
-          style={{ background: "#e3f2fd", color: "#1565c0", fontFamily: "Manrope, sans-serif", minHeight: 44 }}
-        >
-          Change Bird
         </button>
       </div>
     </div>
@@ -233,7 +208,7 @@ export default function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const [phase, setPhase] = useState<GamePhase>("avatar");
+  const [phase, setPhase] = useState<GamePhase>("start");
   const [score, setScore] = useState(0);
   const [highScore, updateHighScore] = useHighScore("flappyslaybird_hs");
   const [hearts, setHearts] = useState(START_HEARTS);
@@ -242,11 +217,10 @@ export default function App() {
   const [boosted, setBoosted] = useState(false);
   const [boostTimer, setBoostTimer] = useState(0);
   const [gameOverCause, setGameOverCause] = useState("");
-  const [selectedAvatar, setSelectedAvatar] = useState<AvatarType>("robin");
 
   // Game state refs (mutated in loop, no re-render)
-  const birdRef = useRef<Bird>({
-    x: BIRD_X, y: 200, vy: 0, avatar: "robin", boosted: false, boostTimer: 0,
+  const flyerRef = useRef<Flyer>({
+    x: FLYER_X, y: 200, vy: 0, boosted: false, boostTimer: 0,
   });
   const treesRef = useRef<Tree[]>([]);
   const cloudsRef = useRef<Cloud[]>([]);
@@ -256,7 +230,7 @@ export default function App() {
   const heartsRef = useRef(START_HEARTS);
   const levelRef = useRef<LevelConfig>(LEVELS[0]);
   const bannerTimerRef = useRef(0);
-  const phaseRef = useRef<GamePhase>("avatar");
+  const phaseRef = useRef<GamePhase>("start");
   const wingAngleRef = useRef(0);
   const wingDirRef = useRef(1);
   const canvasSizeRef = useRef({ w: 400, h: 600 });
@@ -289,12 +263,12 @@ export default function App() {
     window.addEventListener("resize", resize);
     return () => window.removeEventListener("resize", resize);
     // Re-run when the phase changes: the canvas only exists once we leave the
-    // "avatar" phase, so the initial mount (phase === "avatar") can't size it.
+    // "start" phase, so the initial mount (phase === "start") can't size it.
   }, [phase]);
 
-  const initGame = useCallback((avatar: AvatarType) => {
+  const initGame = useCallback(() => {
     const { h } = canvasSizeRef.current;
-    birdRef.current = { x: BIRD_X, y: h * 0.4, vy: 0, avatar, boosted: false, boostTimer: 0 };
+    flyerRef.current = { x: FLYER_X, y: h * 0.4, vy: 0, boosted: false, boostTimer: 0 };
     treesRef.current = [];
     cloudsRef.current = [];
     collectablesRef.current = [];
@@ -318,20 +292,15 @@ export default function App() {
     setGameOverCause("");
   }, []);
 
-  const handleAvatarSelect = useCallback((avatar: AvatarType) => {
-    setSelectedAvatar(avatar);
-    initGame(avatar);
+  const handleStart = useCallback(() => {
+    initGame();
     setPhase("playing");
   }, [initGame]);
 
   const handleRestart = useCallback(() => {
-    initGame(selectedAvatar);
+    initGame();
     setPhase("playing");
-  }, [initGame, selectedAvatar]);
-
-  const handleChangeAvatar = useCallback(() => {
-    setPhase("avatar");
-  }, []);
+  }, [initGame]);
 
   // Flap on click/tap/space
   const flap = useCallback(() => {
@@ -360,11 +329,11 @@ export default function App() {
 
     const { w, h } = canvasSizeRef.current;
     const groundY = h - GROUND_H;
-    const bird = birdRef.current;
+    const flyer = flyerRef.current;
 
     // Level-driven difficulty (levels 1-3 are gentle, 4-5 ramp up)
     const lvl = levelRef.current;
-    const treeSpeed = lvl.speed * (bird.boosted ? 1.5 : 1);
+    const treeSpeed = lvl.speed * (flyer.boosted ? 1.5 : 1);
     const cloudSpeed = CLOUD_SPEED_BASE * (0.8 + lvl.n * 0.15);
 
     distanceRef.current += treeSpeed * dt;
@@ -384,23 +353,23 @@ export default function App() {
 
     // ── Flap ──
     if (justFlapRef.current) {
-      bird.vy = bird.boosted ? BOOST_FLAP_V : FLAP_V;
+      flyer.vy = flyer.boosted ? BOOST_FLAP_V : FLAP_V;
       justFlapRef.current = false;
     }
 
     // ── Physics ── (gentler gravity on early levels)
-    bird.vy += lvl.gravity * dt;
-    bird.y += bird.vy * dt;
+    flyer.vy += lvl.gravity * dt;
+    flyer.y += flyer.vy * dt;
 
     // ── Boost timer ──
-    if (bird.boosted) {
-      bird.boostTimer -= dt;
-      if (bird.boostTimer <= 0) {
-        bird.boosted = false;
-        bird.boostTimer = 0;
+    if (flyer.boosted) {
+      flyer.boostTimer -= dt;
+      if (flyer.boostTimer <= 0) {
+        flyer.boosted = false;
+        flyer.boostTimer = 0;
       }
       setBoosted(true);
-      setBoostTimer(bird.boostTimer);
+      setBoostTimer(flyer.boostTimer);
     } else {
       setBoosted(false);
     }
@@ -479,7 +448,7 @@ export default function App() {
 
     // ── Scoring ──
     for (const tree of treesRef.current) {
-      if (!tree.passed && tree.x + tree.width < BIRD_X) {
+      if (!tree.passed && tree.x + tree.width < FLYER_X) {
         tree.passed = true;
         scoreRef.current += 1;
         setScore(scoreRef.current);
@@ -495,15 +464,15 @@ export default function App() {
         const tx = tree.x + TREE_HITBOX_SHRINK;
         const tw = tree.width - TREE_HITBOX_SHRINK * 2;
 
-        const hitTop = circleRect(bird.x, bird.y, BIRD_RADIUS - 3, tx, -10, tw, topH + 10);
-        const hitBot = circleRect(bird.x, bird.y, BIRD_RADIUS - 3, tx, botY, tw, groundY - botY);
+        const hitTop = circleRect(flyer.x, flyer.y, FLYER_RADIUS - 3, tx, -10, tw, topH + 10);
+        const hitBot = circleRect(flyer.x, flyer.y, FLYER_RADIUS - 3, tx, botY, tw, groundY - botY);
 
         if (hitTop) {
           loseHeart("✈️ Hit an airplane!");
           break;
         }
         if (hitBot) {
-          loseHeart("🌳 Hit a tree!");
+          loseHeart("🧱 Hit a pillar!");
           break;
         }
       }
@@ -516,7 +485,7 @@ export default function App() {
         const cy = cloud.y + CLOUD_HITBOX_SHRINK;
         const cw2 = cloud.w - CLOUD_HITBOX_SHRINK * 2;
         const ch2 = cloud.h - CLOUD_HITBOX_SHRINK * 2;
-        if (circleRect(bird.x, bird.y, BIRD_RADIUS - 4, cx, cy, cw2, ch2)) {
+        if (circleRect(flyer.x, flyer.y, FLYER_RADIUS - 4, cx, cy, cw2, ch2)) {
           loseHeart("☁️ Hit a cloud!");
           break;
         }
@@ -526,13 +495,13 @@ export default function App() {
     // ── Collision: collectables ──
     for (const c of collectablesRef.current) {
       if (!c.alive) continue;
-      const dx = bird.x - c.x;
-      const dy = bird.y - c.y;
-      if (dx * dx + dy * dy < (BIRD_RADIUS + COLLECTABLE_RADIUS) ** 2) {
+      const dx = flyer.x - c.x;
+      const dy = flyer.y - c.y;
+      if (dx * dx + dy * dy < (FLYER_RADIUS + COLLECTABLE_RADIUS) ** 2) {
         c.alive = false;
         if (c.kind === "dragonfly") {
-          bird.boosted = true;
-          bird.boostTimer = BOOST_DURATION;
+          flyer.boosted = true;
+          flyer.boostTimer = BOOST_DURATION;
           setBoosted(true);
           setBoostTimer(BOOST_DURATION);
         } else {
@@ -549,16 +518,16 @@ export default function App() {
       // net tip position (approximate)
       const netTipX = kid.x + 20 + Math.sin(kid.netAngle) * 40;
       const netTipY = groundY - 48 - 55 + Math.cos(kid.netAngle) * 16;
-      const dx = bird.x - netTipX;
-      const dy = bird.y - netTipY;
-      if (dx * dx + dy * dy < (BIRD_RADIUS + KID_NET_RADIUS) ** 2) {
+      const dx = flyer.x - netTipX;
+      const dy = flyer.y - netTipY;
+      if (dx * dx + dy * dy < (FLYER_RADIUS + KID_NET_RADIUS) ** 2) {
         endGame("🧒 Caught by a kid's net!");
         return;
       }
       // also check kid body area (wide net sweep)
       if (
         rectsOverlap(
-          bird.x - BIRD_RADIUS, bird.y - BIRD_RADIUS, BIRD_RADIUS * 2, BIRD_RADIUS * 2,
+          flyer.x - FLYER_RADIUS, flyer.y - FLYER_RADIUS, FLYER_RADIUS * 2, FLYER_RADIUS * 2,
           kid.x - 30, groundY - 110, 80, 110,
         )
       ) {
@@ -568,17 +537,17 @@ export default function App() {
     }
 
     // ── Ground / ceiling ──
-    if (bird.y + BIRD_RADIUS >= groundY) {
+    if (flyer.y + FLYER_RADIUS >= groundY) {
       endGame("💥 Hit the ground!");
       return;
     }
-    if (bird.y - BIRD_RADIUS <= 0) {
-      bird.y = BIRD_RADIUS;
-      bird.vy = Math.max(bird.vy, 0);
+    if (flyer.y - FLYER_RADIUS <= 0) {
+      flyer.y = FLYER_RADIUS;
+      flyer.vy = Math.max(flyer.vy, 0);
     }
 
     // ─── Draw ─────────────────────────────────────────────────────────────
-    drawSky(ctx, w, h, bird.boosted);
+    drawSky(ctx, w, h, flyer.boosted);
 
     // Draw clouds (behind trees)
     for (const cloud of cloudsRef.current) {
@@ -602,10 +571,10 @@ export default function App() {
 
     drawGround(ctx, w, h);
 
-    // Bird flicker when invincible
-    const showBird = invincibleRef.current <= 0 || Math.floor(invincibleRef.current * 10) % 2 === 0;
-    if (showBird) {
-      drawBird(ctx, bird, wingAngleRef.current);
+    // Flyer flicker when invincible
+    const showFlyer = invincibleRef.current <= 0 || Math.floor(invincibleRef.current * 10) % 2 === 0;
+    if (showFlyer) {
+      drawFlyer(ctx, flyer, wingAngleRef.current);
     }
 
     // Score on canvas
@@ -640,7 +609,7 @@ export default function App() {
     <GameShell
       topbar={
         <GameTopbar
-          title="Flappy Slay Bird 🐦"
+          title="Pipe Flyer"
           stats={[
             { label: "Score", value: score, accent: true },
             { label: "Best", value: Math.max(highScore, score) },
@@ -648,8 +617,8 @@ export default function App() {
         />
       }
     >
-      {phase === "avatar" ? (
-        <AvatarPicker onSelect={handleAvatarSelect} />
+      {phase === "start" ? (
+        <StartScreen onStart={handleStart} />
       ) : (
         <div ref={containerRef} className="relative w-full h-full overflow-hidden">
           <canvas
@@ -669,7 +638,7 @@ export default function App() {
             >
               <div
                 className="px-6 py-2 rounded-full text-xl font-bold"
-                style={{ background: "rgba(67,160,71,0.92)", color: "#fff", fontFamily: "Fraunces, serif", boxShadow: "0 4px 20px rgba(0,0,0,0.25)" }}
+                style={{ background: "rgba(124,58,237,0.92)", color: "#fff", fontFamily: "Fraunces, serif", boxShadow: "0 4px 20px rgba(0,0,0,0.25)" }}
               >
                 🎉 {levelBanner}
               </div>
@@ -681,7 +650,6 @@ export default function App() {
               highScore={highScore}
               cause={gameOverCause}
               onRestart={handleRestart}
-              onChangeAvatar={handleChangeAvatar}
             />
           )}
           {phase === "playing" && (

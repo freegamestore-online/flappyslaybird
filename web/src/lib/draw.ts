@@ -1,5 +1,10 @@
-import type { Bird, Tree, Cloud, Collectable, Kid } from "../types";
-import { drawEagle, drawFlamingo, drawPenguin } from "./draw-birds";
+import type { Flyer, Tree, Cloud, Collectable, Kid } from "../types";
+
+// Pipe Flyer brand colour (violet). Pillars, banners and the paper-plane flyer
+// are drawn in this family so the game reads as its own thing.
+const BRAND = "#7c3aed";
+const BRAND_DARK = "#5b21b6";
+const BRAND_LIGHT = "#c4b5fd";
 
 // ─── Sky / Background ───────────────────────────────────────────────────────
 
@@ -24,10 +29,10 @@ export function drawGround(ctx: CanvasRenderingContext2D, w: number, h: number) 
   ctx.fillRect(0, h - 28, w, 28);
 }
 
-// ─── Obstacles: airplane on top, tree below ──────────────────────────────────
-// The kid asked for AIRPLANES instead of trees on the top part. The collision
-// column is unchanged (same rect the physics checks) — the plane hangs at the
-// bottom of the column trailing a striped banner up to the sky.
+// ─── Obstacles: airplane on top, pillar below ────────────────────────────────
+// The top obstacle is an airplane towing a striped banner; the bottom one is a
+// brand-coloured pillar. The collision column is unchanged (same rect the
+// physics checks) — the plane hangs at the bottom of the column.
 
 export function drawTree(ctx: CanvasRenderingContext2D, tree: Tree, canvasH: number) {
   const { x, gapY, gapH, width } = tree;
@@ -38,18 +43,28 @@ export function drawTree(ctx: CanvasRenderingContext2D, tree: Tree, canvasH: num
   // ── TOP: AIRPLANE with banner ──
   drawAirplaneColumn(ctx, x, width, topH);
 
-  // ── BOTTOM TREE ──
-  const trunkColor = "#5d4037";
-  const barkColor = "#795548";
+  // ── BOTTOM PILLAR ──
   if (botH > 0) {
-    drawFoliage(ctx, x + width / 2, botY + 30, width, false);
-    ctx.fillStyle = trunkColor;
-    ctx.fillRect(x + width * 0.3, botY + 30, width * 0.4, botH);
-    ctx.fillStyle = barkColor;
-    for (let i = botY + 40; i < botY + botH; i += 18) {
-      ctx.fillRect(x + width * 0.3 + 4, i, width * 0.12, 6);
-    }
+    drawPillar(ctx, x, botY, width, botH);
   }
+}
+
+/** Violet pillar standing on the ground: a wider cap at the top and light
+ *  stripes down the shaft. */
+function drawPillar(ctx: CanvasRenderingContext2D, x: number, topY: number, width: number, height: number) {
+  const capH = 22;
+  const capInset = 4;
+  ctx.fillStyle = BRAND;
+  ctx.fillRect(x + width * 0.22, topY + capH, width * 0.56, height - capH);
+  ctx.fillStyle = BRAND_LIGHT;
+  for (let sy = topY + capH + 12; sy < topY + height; sy += 22) {
+    ctx.fillRect(x + width * 0.3, sy, width * 0.08, 6);
+  }
+  ctx.fillStyle = BRAND;
+  ctx.fillRect(x + capInset, topY, width - capInset * 2, capH);
+  ctx.strokeStyle = BRAND_DARK;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x + capInset, topY, width - capInset * 2, capH);
 }
 
 /** A cute cartoon plane at the bottom of the top obstacle column, towing a
@@ -64,14 +79,14 @@ function drawAirplaneColumn(ctx: CanvasRenderingContext2D, x: number, width: num
   const bx = cx - bw / 2;
   const bannerBottom = planeY - 20;
   if (bannerBottom > 0) {
-    ctx.fillStyle = "#ef5350";
+    ctx.fillStyle = BRAND;
     ctx.fillRect(bx, 0, bw, bannerBottom);
-    ctx.fillStyle = "#ffcdd2";
+    ctx.fillStyle = BRAND_LIGHT;
     for (let sy = 10; sy < bannerBottom; sy += 26) {
       ctx.fillRect(bx, sy, bw, 10);
     }
     // banner edges
-    ctx.strokeStyle = "#c62828";
+    ctx.strokeStyle = BRAND_DARK;
     ctx.lineWidth = 2;
     ctx.strokeRect(bx, -2, bw, bannerBottom + 2);
     // tow ropes to the plane
@@ -85,7 +100,7 @@ function drawAirplaneColumn(ctx: CanvasRenderingContext2D, x: number, width: num
     ctx.stroke();
   }
 
-  // plane body (nose pointing left — flying toward the bird)
+  // plane body (nose pointing left — flying toward the flyer)
   ctx.save();
   ctx.translate(cx, planeY);
   // fuselage
@@ -126,27 +141,6 @@ function drawAirplaneColumn(ctx: CanvasRenderingContext2D, x: number, width: num
     ctx.fill();
   }
   ctx.restore();
-}
-
-function drawFoliage(
-  ctx: CanvasRenderingContext2D,
-  cx: number,
-  baseY: number,
-  width: number,
-  flipped: boolean,
-) {
-  const layers = [
-    { r: width * 0.62, y: 0, color: "#2e7d32" },
-    { r: width * 0.52, y: flipped ? -14 : 14, color: "#388e3c" },
-    { r: width * 0.38, y: flipped ? -26 : 26, color: "#43a047" },
-  ];
-  for (const l of layers) {
-    const yy = flipped ? baseY - l.y : baseY + l.y;
-    ctx.beginPath();
-    ctx.arc(cx, yy, l.r, 0, Math.PI * 2);
-    ctx.fillStyle = l.color;
-    ctx.fill();
-  }
 }
 
 // ─── Clouds ──────────────────────────────────────────────────────────────────
@@ -379,38 +373,54 @@ export function drawKid(ctx: CanvasRenderingContext2D, kid: Kid, groundY: number
   ctx.restore();
 }
 
-// ─── Bird / Avatar ────────────────────────────────────────────────────────────
+// ─── Flyer: an original paper plane in brand violet ──────────────────────────
+// Local space: body centred on (0,0), nose toward +x. The whole plane tilts
+// with its vertical velocity, and the lower half-wing flutters with wingAngle.
 
-export function drawBird(
-  ctx: CanvasRenderingContext2D,
-  bird: Bird,
-  wingAngle: number,
-) {
+export function drawFlyer(ctx: CanvasRenderingContext2D, flyer: Flyer, wingAngle: number) {
   ctx.save();
-  ctx.translate(bird.x, bird.y);
+  ctx.translate(flyer.x, flyer.y);
 
   // tilt with velocity
-  const tilt = Math.max(-0.5, Math.min(0.8, bird.vy * 0.06));
+  const tilt = Math.max(-0.5, Math.min(0.8, flyer.vy * 0.06));
   ctx.rotate(tilt);
+  ctx.lineJoin = "round";
 
-  const boosted = bird.boosted;
+  const upper = flyer.boosted ? "#a78bfa" : BRAND;
+  const lower = flyer.boosted ? "#8b5cf6" : BRAND_DARK;
 
-  if (bird.avatar === "robin") {
-    drawRobin(ctx, wingAngle, boosted);
-  } else if (bird.avatar === "parrot") {
-    drawParrot(ctx, wingAngle, boosted);
-  } else if (bird.avatar === "owl") {
-    drawOwl(ctx, wingAngle, boosted);
-  } else if (bird.avatar === "flamingo") {
-    drawFlamingo(ctx, wingAngle, boosted);
-  } else if (bird.avatar === "penguin") {
-    drawPenguin(ctx, wingAngle, boosted);
-  } else {
-    drawEagle(ctx, wingAngle, boosted);
-  }
+  // lower half-wing, hinged at the fold so it flutters
+  ctx.save();
+  ctx.translate(-6, 0);
+  ctx.rotate(wingAngle * 0.15);
+  ctx.fillStyle = lower;
+  ctx.beginPath();
+  ctx.moveTo(28, 0);
+  ctx.lineTo(-10, 13);
+  ctx.lineTo(0, 0);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  // upper half-wing
+  ctx.fillStyle = upper;
+  ctx.beginPath();
+  ctx.moveTo(22, 0);
+  ctx.lineTo(-16, -13);
+  ctx.lineTo(-6, 0);
+  ctx.closePath();
+  ctx.fill();
+
+  // crease down the middle
+  ctx.strokeStyle = BRAND_LIGHT;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(22, 0);
+  ctx.lineTo(-6, 0);
+  ctx.stroke();
 
   // boost aura
-  if (boosted) {
+  if (flyer.boosted) {
     ctx.shadowColor = "#ff4081";
     ctx.shadowBlur = 18;
     ctx.beginPath();
@@ -420,216 +430,4 @@ export function drawBird(
   }
 
   ctx.restore();
-}
-
-function drawRobin(ctx: CanvasRenderingContext2D, wingAngle: number, boosted: boolean) {
-  // wing
-  ctx.save();
-  ctx.rotate(-wingAngle * 0.7);
-  ctx.fillStyle = boosted ? "#ff8a65" : "#5d4037";
-  ctx.beginPath();
-  ctx.ellipse(-6, 2, 18, 8, 0.4, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-
-  // body
-  ctx.fillStyle = boosted ? "#ff7043" : "#6d4c41";
-  ctx.beginPath();
-  ctx.ellipse(0, 0, 16, 12, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  // red breast
-  ctx.fillStyle = "#e53935";
-  ctx.beginPath();
-  ctx.ellipse(4, 3, 9, 7, 0.3, 0, Math.PI * 2);
-  ctx.fill();
-
-  // head
-  ctx.fillStyle = "#4e342e";
-  ctx.beginPath();
-  ctx.arc(12, -8, 9, 0, Math.PI * 2);
-  ctx.fill();
-
-  // eye
-  ctx.fillStyle = "#fff";
-  ctx.beginPath();
-  ctx.arc(15, -10, 3, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = "#111";
-  ctx.beginPath();
-  ctx.arc(16, -10, 1.5, 0, Math.PI * 2);
-  ctx.fill();
-
-  // beak
-  ctx.fillStyle = "#ffa726";
-  ctx.beginPath();
-  ctx.moveTo(21, -8);
-  ctx.lineTo(28, -7);
-  ctx.lineTo(21, -5);
-  ctx.closePath();
-  ctx.fill();
-
-  // tail
-  ctx.fillStyle = "#3e2723";
-  ctx.beginPath();
-  ctx.moveTo(-14, 0);
-  ctx.lineTo(-26, -4);
-  ctx.lineTo(-26, 4);
-  ctx.closePath();
-  ctx.fill();
-}
-
-function drawParrot(ctx: CanvasRenderingContext2D, wingAngle: number, boosted: boolean) {
-  // wing
-  ctx.save();
-  ctx.rotate(-wingAngle * 0.7);
-  ctx.fillStyle = boosted ? "#ffeb3b" : "#43a047";
-  ctx.beginPath();
-  ctx.ellipse(-6, 2, 18, 8, 0.4, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-
-  // body
-  ctx.fillStyle = boosted ? "#66bb6a" : "#388e3c";
-  ctx.beginPath();
-  ctx.ellipse(0, 0, 16, 12, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  // belly
-  ctx.fillStyle = "#ffeb3b";
-  ctx.beginPath();
-  ctx.ellipse(4, 3, 8, 6, 0.3, 0, Math.PI * 2);
-  ctx.fill();
-
-  // head
-  ctx.fillStyle = "#2e7d32";
-  ctx.beginPath();
-  ctx.arc(12, -8, 9, 0, Math.PI * 2);
-  ctx.fill();
-
-  // red patch on head
-  ctx.fillStyle = "#e53935";
-  ctx.beginPath();
-  ctx.arc(13, -13, 5, 0, Math.PI * 2);
-  ctx.fill();
-
-  // eye
-  ctx.fillStyle = "#fff";
-  ctx.beginPath();
-  ctx.arc(15, -10, 3, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = "#111";
-  ctx.beginPath();
-  ctx.arc(16, -10, 1.5, 0, Math.PI * 2);
-  ctx.fill();
-
-  // curved beak
-  ctx.fillStyle = "#f57f17";
-  ctx.beginPath();
-  ctx.moveTo(20, -8);
-  ctx.quadraticCurveTo(30, -8, 28, -4);
-  ctx.lineTo(20, -5);
-  ctx.closePath();
-  ctx.fill();
-
-  // tail (long colorful)
-  ctx.fillStyle = "#1565c0";
-  ctx.beginPath();
-  ctx.moveTo(-14, 0);
-  ctx.lineTo(-30, -6);
-  ctx.lineTo(-28, 6);
-  ctx.closePath();
-  ctx.fill();
-  ctx.fillStyle = "#e53935";
-  ctx.beginPath();
-  ctx.moveTo(-14, 2);
-  ctx.lineTo(-32, 0);
-  ctx.lineTo(-28, 8);
-  ctx.closePath();
-  ctx.fill();
-}
-
-function drawOwl(ctx: CanvasRenderingContext2D, wingAngle: number, boosted: boolean) {
-  // wing
-  ctx.save();
-  ctx.rotate(-wingAngle * 0.5);
-  ctx.fillStyle = boosted ? "#ffe082" : "#8d6e63";
-  ctx.beginPath();
-  ctx.ellipse(-6, 2, 20, 9, 0.4, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-
-  // body
-  ctx.fillStyle = boosted ? "#a1887f" : "#6d4c41";
-  ctx.beginPath();
-  ctx.ellipse(0, 0, 16, 14, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  // belly pattern
-  ctx.fillStyle = "#d7ccc8";
-  ctx.beginPath();
-  ctx.ellipse(3, 2, 9, 10, 0.1, 0, Math.PI * 2);
-  ctx.fill();
-
-  // head (large)
-  ctx.fillStyle = "#5d4037";
-  ctx.beginPath();
-  ctx.arc(11, -9, 12, 0, Math.PI * 2);
-  ctx.fill();
-
-  // ear tufts
-  ctx.fillStyle = "#4e342e";
-  ctx.beginPath();
-  ctx.moveTo(6, -19);
-  ctx.lineTo(4, -27);
-  ctx.lineTo(10, -20);
-  ctx.closePath();
-  ctx.fill();
-  ctx.beginPath();
-  ctx.moveTo(16, -19);
-  ctx.lineTo(18, -27);
-  ctx.lineTo(12, -20);
-  ctx.closePath();
-  ctx.fill();
-
-  // big eyes
-  ctx.fillStyle = "#fff";
-  ctx.beginPath();
-  ctx.arc(8, -9, 5, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.beginPath();
-  ctx.arc(16, -9, 5, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = "#ff8f00";
-  ctx.beginPath();
-  ctx.arc(8, -9, 3, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.beginPath();
-  ctx.arc(16, -9, 3, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = "#111";
-  ctx.beginPath();
-  ctx.arc(8, -9, 1.5, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.beginPath();
-  ctx.arc(16, -9, 1.5, 0, Math.PI * 2);
-  ctx.fill();
-
-  // beak
-  ctx.fillStyle = "#ffa726";
-  ctx.beginPath();
-  ctx.moveTo(11, -5);
-  ctx.lineTo(15, -1);
-  ctx.lineTo(7, -1);
-  ctx.closePath();
-  ctx.fill();
-
-  // tail
-  ctx.fillStyle = "#4e342e";
-  ctx.beginPath();
-  ctx.moveTo(-14, 0);
-  ctx.lineTo(-24, -5);
-  ctx.lineTo(-24, 5);
-  ctx.closePath();
-  ctx.fill();
 }

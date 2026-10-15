@@ -22,7 +22,9 @@ export interface LevelConfig {
   kidSpawn: [number, number];
 }
 
-export const LEVELS: LevelConfig[] = [
+// Non-empty tuple so LEVELS[0] is always a LevelConfig (no undefined under
+// noUncheckedIndexedAccess).
+export const LEVELS: [LevelConfig, ...LevelConfig[]] = [
   { n: 1, name: "Cozy Start", nextAt: 10, speed: 125, gap: 250, gravity: 1050, spawn: [2.6, 3.4], cloudSpawn: [5, 8], kidSpawn: [18, 26] },
   { n: 2, name: "Breezy", nextAt: 25, speed: 145, gap: 230, gravity: 1120, spawn: [2.3, 3.0], cloudSpawn: [4.5, 7], kidSpawn: [16, 22] },
   { n: 3, name: "Windy", nextAt: 45, speed: 165, gap: 210, gravity: 1200, spawn: [2.1, 2.8], cloudSpawn: [4, 6], kidSpawn: [14, 20] },
