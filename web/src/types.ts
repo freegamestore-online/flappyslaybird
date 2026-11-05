@@ -34,7 +34,6 @@ export interface Collectable {
 
 export interface Kid {
   x: number;
-  netX: number; // net swing offset
   netAngle: number;
   swingDir: number;
 }

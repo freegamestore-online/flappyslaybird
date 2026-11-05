@@ -13,6 +13,7 @@ import {
   drawFlyer,
 } from "./lib/draw";
 import { LEVELS, levelForScore, type LevelConfig } from "./lib/levels";
+import { circleRect, rectsOverlap, netHoopCenter, kidBodyRect, inTreeColumn } from "./lib/collision";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 // Pipe Flyer brand colour (violet), used for UI accents.
@@ -33,28 +34,11 @@ const TREE_HITBOX_SHRINK = 14;   // generous: visual width minus 2x this is soli
 const CLOUD_HITBOX_SHRINK = 14;
 const COLLECTABLE_RADIUS = 16;
 const GROUND_H = 48;
+const RESTART_DELAY_MS = 500;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function rand(min: number, max: number) {
   return Math.random() * (max - min) + min;
-}
-
-function rectsOverlap(
-  ax: number, ay: number, aw: number, ah: number,
-  bx: number, by: number, bw: number, bh: number,
-) {
-  return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
-}
-
-function circleRect(
-  cx: number, cy: number, cr: number,
-  rx: number, ry: number, rw: number, rh: number,
-) {
-  const nearX = Math.max(rx, Math.min(cx, rx + rw));
-  const nearY = Math.max(ry, Math.min(cy, ry + rh));
-  const dx = cx - nearX;
-  const dy = cy - nearY;
-  return dx * dx + dy * dy < cr * cr;
 }
 
 // ─── Start screen ────────────────────────────────────────────────────────────
@@ -152,11 +136,13 @@ function HUD({
 function GameOverOverlay({
   score,
   highScore,
+  isNewBest,
   cause,
   onRestart,
 }: {
   score: number;
   highScore: number;
+  isNewBest: boolean;
   cause: string;
   onRestart: () => void;
 }) {
@@ -188,7 +174,7 @@ function GameOverOverlay({
             <span className="text-xs" style={{ color: "#888" }}>Best</span>
           </div>
         </div>
-        {score >= highScore && score > 0 && (
+        {isNewBest && (
           <div className="text-sm font-bold" style={{ color: BRAND }}>🏆 New High Score!</div>
         )}
         <button
@@ -241,6 +227,9 @@ export default function App() {
   const cloudSpawnTimerRef = useRef(0);
   const distanceRef = useRef(0);
   const justFlapRef = useRef(false);
+  const bestAtStartRef = useRef(0); // high score before this run, for "New High Score"
+  const gameOverAtRef = useRef(0);
+  const boostTimerShownRef = useRef(0);
 
   // Sync phase ref
   useEffect(() => {
@@ -283,21 +272,18 @@ export default function App() {
     kidSpawnTimerRef.current = 8;
     cloudSpawnTimerRef.current = 2;
     distanceRef.current = 0;
+    bestAtStartRef.current = highScore;
     setScore(0);
     setHearts(START_HEARTS);
     setLevel(1);
     setLevelBanner(null);
     setBoosted(false);
     setBoostTimer(0);
+    boostTimerShownRef.current = 0;
     setGameOverCause("");
-  }, []);
+  }, [highScore]);
 
   const handleStart = useCallback(() => {
-    initGame();
-    setPhase("playing");
-  }, [initGame]);
-
-  const handleRestart = useCallback(() => {
     initGame();
     setPhase("playing");
   }, [initGame]);
@@ -310,14 +296,23 @@ export default function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.code === "Space" || e.code === "ArrowUp") {
+      const phase = phaseRef.current;
+      if (phase === "playing" && (e.code === "Space" || e.code === "ArrowUp")) {
         e.preventDefault();
         flap();
+      } else if (
+        (e.code === "Space" || e.code === "Enter") && !e.repeat &&
+        // Short grace period so a flap pressed at the moment of death
+        // doesn't skip straight past the game-over screen.
+        (phase === "start" || (phase === "gameover" && performance.now() - gameOverAtRef.current > RESTART_DELAY_MS))
+      ) {
+        e.preventDefault();
+        handleStart();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [flap]);
+  }, [flap, handleStart]);
 
   // ─── Game Loop ─────────────────────────────────────────────────────────────
   useGameLoop((dt) => {
@@ -367,11 +362,14 @@ export default function App() {
       if (flyer.boostTimer <= 0) {
         flyer.boosted = false;
         flyer.boostTimer = 0;
+        setBoosted(false);
       }
-      setBoosted(true);
-      setBoostTimer(flyer.boostTimer);
-    } else {
-      setBoosted(false);
+      // The HUD shows tenths; only re-render when that value changes.
+      const shown = Math.ceil(flyer.boostTimer * 10) / 10;
+      if (shown !== boostTimerShownRef.current) {
+        boostTimerShownRef.current = shown;
+        setBoostTimer(shown);
+      }
     }
 
     // ── Invincibility cooldown ──
@@ -415,7 +413,7 @@ export default function App() {
     // ── Spawn kids ──
     kidSpawnTimerRef.current -= dt;
     if (kidSpawnTimerRef.current <= 0) {
-      kidsRef.current.push({ x: w + 10, netX: 0, netAngle: -0.4, swingDir: 1 });
+      kidsRef.current.push({ x: w + 10, netAngle: -0.4, swingDir: 1 });
       kidSpawnTimerRef.current = rand(lvl.kidSpawn[0], lvl.kidSpawn[1]);
     }
 
@@ -478,8 +476,8 @@ export default function App() {
       }
     }
 
-    // ── Collision: clouds ──
-    if (invincibleRef.current <= 0) {
+    // ── Collision: clouds ── (not while threading a pillar gap)
+    if (invincibleRef.current <= 0 && !inTreeColumn(flyer.x, treesRef.current)) {
       for (const cloud of cloudsRef.current) {
         const cx = cloud.x + CLOUD_HITBOX_SHRINK;
         const cy = cloud.y + CLOUD_HITBOX_SHRINK;
@@ -513,28 +511,26 @@ export default function App() {
       }
     }
 
-    // ── Collision: kids (net) ──
-    for (const kid of kidsRef.current) {
-      // net tip position (approximate)
-      const netTipX = kid.x + 20 + Math.sin(kid.netAngle) * 40;
-      const netTipY = groundY - 48 - 55 + Math.cos(kid.netAngle) * 16;
-      const dx = flyer.x - netTipX;
-      const dy = flyer.y - netTipY;
-      if (dx * dx + dy * dy < (FLYER_RADIUS + KID_NET_RADIUS) ** 2) {
-        endGame("🧒 Caught by a kid's net!");
-        return;
-      }
-      // also check kid body area (wide net sweep)
-      if (
-        rectsOverlap(
-          flyer.x - FLYER_RADIUS, flyer.y - FLYER_RADIUS, FLYER_RADIUS * 2, FLYER_RADIUS * 2,
-          kid.x - 30, groundY - 110, 80, 110,
-        )
-      ) {
-        endGame("🧒 Caught by a kid's net!");
-        return;
+    // ── Collision: kids (net or body) — costs a heart like other hazards ──
+    if (invincibleRef.current <= 0) {
+      for (const kid of kidsRef.current) {
+        const hoop = netHoopCenter(kid, groundY);
+        const dx = flyer.x - hoop.x;
+        const dy = flyer.y - hoop.y;
+        const body = kidBodyRect(kid, groundY);
+        if (
+          dx * dx + dy * dy < (FLYER_RADIUS + KID_NET_RADIUS) ** 2 ||
+          rectsOverlap(
+            flyer.x - FLYER_RADIUS, flyer.y - FLYER_RADIUS, FLYER_RADIUS * 2, FLYER_RADIUS * 2,
+            body.x, body.y, body.w, body.h,
+          )
+        ) {
+          loseHeart("🧒 Caught by a kid's net!");
+          break;
+        }
       }
     }
+    if (phaseRef.current !== "playing") return;
 
     // ── Ground / ceiling ──
     if (flyer.y + FLYER_RADIUS >= groundY) {
@@ -587,7 +583,7 @@ export default function App() {
   }, phase !== "playing");
 
   function loseHeart(cause: string) {
-    if (invincibleRef.current > 0) return;
+    if (invincibleRef.current > 0 || phaseRef.current !== "playing") return;
     const newH = heartsRef.current - 1;
     heartsRef.current = newH;
     setHearts(newH);
@@ -600,6 +596,7 @@ export default function App() {
 
   function endGame(cause: string) {
     phaseRef.current = "dead";
+    gameOverAtRef.current = performance.now();
     setPhase("gameover");
     setGameOverCause(cause);
     updateHighScore(scoreRef.current);
@@ -625,8 +622,7 @@ export default function App() {
             ref={canvasRef}
             className="absolute inset-0 w-full h-full"
             style={{ touchAction: "none", cursor: "pointer" }}
-            onClick={flap}
-            onTouchStart={(e) => { e.preventDefault(); flap(); }}
+            onPointerDown={flap}
           />
           {phase === "playing" && (
             <HUD hearts={hearts} boosted={boosted} boostTimer={boostTimer} level={level} />
@@ -648,8 +644,9 @@ export default function App() {
             <GameOverOverlay
               score={score}
               highScore={highScore}
+              isNewBest={score > bestAtStartRef.current}
               cause={gameOverCause}
-              onRestart={handleRestart}
+              onRestart={handleStart}
             />
           )}
           {phase === "playing" && (
